@@ -1,0 +1,18 @@
+#+title: README
+
+这是一个遵循 https://github.com/miloyip/json-tutorial/ 实现的 JSON 解析器。
+该解析器实现了基本的 JSON 数据类型解析，包括 null、true、false、数字、字符串、数组和对象。
+
+* 说明
+
+该 JSON 解析器的实现由以下文件组成：
+
+=leptjson.h=:定义了 JSON 数据类型和解析器接口。
+=leptjson.cpp=:实现了 JSON 解析器。
+=test.cpp=:包含了单元测试用例。
+该 JSON 解析器实现了一个基于递归下降的解析器，其中每个函数对应一个语法结构。该解析器使用了 C++11 中的标准库和 STL 容器，如 std::string、std::vector 等。
+
+该 JSON 解析器的实现遵循了 https://github.com/miloyip/json-tutorial/ 中所讲述的思路，并在此基础上进行了修改和优化。
+
+* 贡献
+欢迎提出问题和改进建议并提交 Issue。
