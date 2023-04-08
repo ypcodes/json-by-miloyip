@@ -1,7 +1,10 @@
 #include "leptjson.hpp"
 #include <algorithm>
+#include <cassert>
 #include <limits>
 #include <locale>
+
+namespace mp = boost::multiprecision;
 
 namespace Lept_impl {
 using Lept::Parse_error;
@@ -34,7 +37,8 @@ Lept::Parse_error parse_literal(lept_context &c, Value &v,
 ** v may be of type Null, True, False, Number, or an Array or Object type (to be
 ** implemented later)
 **
-** If parsing succeeds, returns Parse_error::ok; otherwise, returns an error
+** If parsing succeeds, returns Parse_error::success; otherwise, returns an
+*error
 ** message of another Parse_error type
 ** This function parses the JSON string and stores the parsing result in the
 ** passed-in Value struct.
@@ -42,7 +46,8 @@ Lept::Parse_error parse_literal(lept_context &c, Value &v,
 ** during parsing.
 ** Various errors may occur during parsing, such as invalid values, illegal
 ** syntax, etc.
-** If parsing succeeds, returns Parse_error::ok; otherwise, returns an error
+** If parsing succeeds, returns Parse_error::success; otherwise, returns an
+*error
 ** message of another Parse_error type.
 */
 Lept::Parse_error Lept_impl::parse(Value &v, const std::string &json) {
@@ -79,14 +84,16 @@ void Lept_impl::parse_whitespace(lept_context &c) {
 // Type::False. The function first checks if the string to be parsed starts with
 // the specified literal value and if there are no other characters after the
 // literal. If the parsing succeeds, the function sets v.type to the expected
-// type and returns Lept::Parse_error::ok. If the parsing fails, the function
-// returns the corresponding error code.
-// The precondition for this function is that c.json contains a string starting
-// with the specified literal value. After the function is executed, the type of
-// v will be set to the expected type.
+// type and returns Lept::Parse_error::success. If the parsing fails, the
+// function returns the corresponding error code. The precondition for this
+// function is that c.json contains a string starting with the specified literal
+// value. After the function is executed, the type of v will be set to the
+// expected type.
 Lept::Parse_error Lept_impl::parse_literal(lept_context &c, Value &v,
                                            const std::string_view &literal,
                                            Type type) {
+  assert(!c.json.empty());
+  assert(!literal.empty());
   if (c.json.size() < literal.size() ||
       c.json.substr(0, literal.size()) != literal) {
     return Lept::Parse_error::invalid_value;
@@ -94,7 +101,7 @@ Lept::Parse_error Lept_impl::parse_literal(lept_context &c, Value &v,
     return Lept::Parse_error::root_not_singular;
   }
   v.type = type;
-  return Lept::Parse_error::ok;
+  return Lept::Parse_error::success;
 }
 
 Lept::Parse_error Lept_impl::parse_null(lept_context &c, Value &v) {
@@ -114,13 +121,13 @@ Lept::Parse_error Lept_impl::parse_false(lept_context &c, Value &v) {
 // and store the parsing result in a Value variable v.
 // Parameter c is a lept_context variable containing the JSON string to be
 // parsed. If the parsing succeeds, the function sets v.type to Type::Number and
-// v.n to the parsed number, and returns Lept::Parse_error::ok.
+// v.n to the parsed number, and returns Lept::Parse_error::success.
 // If the parsing fails, the function returns the corresponding error code.
 // This function checks for negative sign, integer part, decimal part, and
 // exponent part in the number. It also catches std::out_of_range exception when
 // parsing very large numbers.
 // NOTE: This implementation currently does not
-// support parsing very large numbers.
+// support parsing very large numbers. And may use from_chars instead
 Lept::Parse_error Lept_impl::parse_number(lept_context &c, Value &v) try {
   const std::string &s = c.json;
   const size_t len = s.length();
@@ -162,9 +169,9 @@ Lept::Parse_error Lept_impl::parse_number(lept_context &c, Value &v) try {
     return Parse_error::invalid_value;
 
   v.type = Type::Number;
-  v.n = std::stod(s);
+  v.data = std::stod(s);
 
-  return Parse_error::ok;
+  return Parse_error::success;
 } catch (std::out_of_range &) {
   return Parse_error::number_too_big;
 } catch (...) {
@@ -198,9 +205,9 @@ Lept::Parse_error Lept::parse(Value &v, const std::string &json) {
   return Lept_impl::parse(v, json);
 }
 
-double Lept::get_number(const Value &v) {
+mp::cpp_dec_float_100 Lept::get_number(const Value &v) {
   if (v.type == Type::Number) {
-    return v.n;
+    return std::get<mp::cpp_dec_float_100>(v.data);
   } else
     return std::numeric_limits<double>::quiet_NaN();
 }
