@@ -4,17 +4,17 @@
 #include <string>
 
 namespace Lept {
-enum class Lept_type : int { Null, False, True, Number, String, Array, Object };
+enum class Type { Null, False, True, Number, String, Array, Object };
 
-struct lept_value {
-  Lept_type type;
+struct Value {
+  Type type;
 };
 
 enum class Parse_error { ok, except_value, invalid_value, root_not_singular };
 
-Parse_error parse(lept_value &v, const std::string &json);
+Parse_error parse(Value &v, const std::string &json);
 
-Lept_type get_type(const lept_value &v);
+Type get_type(const Value &v);
 } // namespace Lept
 
 #endif // LEPTJSON_H_
