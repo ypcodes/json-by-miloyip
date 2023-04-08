@@ -1,6 +1,22 @@
 #include "leptjson.hpp"
 #include <gtest/gtest.h>
 
+#define TEST_ERROR(error, json)                                                \
+  do {                                                                         \
+    Lept::Value v;                                                             \
+    v.type = Lept::Type::Null;                                                 \
+    EXPECT_EQ(error, Lept::parse(v, json));                                    \
+    EXPECT_EQ(Lept::Type::Null, Lept::get_type(v));                            \
+  } while (0)
+
+#define TEST_NUMBER(expect, json)                                              \
+  do {                                                                         \
+    Lept::Value v;                                                             \
+    EXPECT_EQ(Lept::Parse_error::ok, Lept::parse(v, json));                    \
+    EXPECT_EQ(Lept::Type::Number, Lept::get_type(v));                          \
+    EXPECT_EQ(expect, Lept::get_number(v));                                    \
+  } while (0)
+
 TEST(leptjsonTest, null) {
   Lept::Value v;
   EXPECT_EQ(Lept::Parse_error::ok, Lept::parse(v, "null"));
@@ -38,6 +54,70 @@ TEST(leptjsonTest, rootNotSingular) {
   EXPECT_EQ(Lept::Parse_error::root_not_singular, Lept::parse(v, "null x"));
   EXPECT_EQ(Lept::Parse_error::root_not_singular, Lept::parse(v, "true x"));
   EXPECT_EQ(Lept::Parse_error::root_not_singular, Lept::parse(v, "false x"));
+}
+
+TEST(leptjsonTest, zero) {
+  Lept::Value v;
+  EXPECT_EQ(Lept::Parse_error::ok, Lept::parse(v, "0"));
+  EXPECT_EQ(Lept::Type::Number, Lept::get_type(v));
+  EXPECT_EQ(0.0, Lept::get_number(v));
+}
+
+TEST(leptjsonTest, positiveInt) {
+  Lept::Value v;
+  EXPECT_EQ(Lept::Parse_error::ok, Lept::parse(v, "123"));
+  EXPECT_EQ(Lept::Type::Number, Lept::get_type(v));
+  EXPECT_EQ(123.0, Lept::get_number(v));
+}
+
+TEST(leptjsonTest, negativeInt) {
+  Lept::Value v;
+  EXPECT_EQ(Lept::Parse_error::ok, Lept::parse(v, "-456"));
+  EXPECT_EQ(Lept::Type::Number, Lept::get_type(v));
+  EXPECT_EQ(-456.0, Lept::get_number(v));
+}
+
+TEST(leptjsonTest, positiveFloat) {
+  Lept::Value v;
+  EXPECT_EQ(Lept::Parse_error::ok, Lept::parse(v, "3.14"));
+  EXPECT_EQ(Lept::Type::Number, Lept::get_type(v));
+  EXPECT_EQ(3.14, Lept::get_number(v));
+}
+
+TEST(leptjsonTest, negativeFloat) {
+  Lept::Value v;
+  EXPECT_EQ(Lept::Parse_error::ok, Lept::parse(v, "-2.71828"));
+  EXPECT_EQ(Lept::Type::Number, Lept::get_type(v));
+  EXPECT_EQ(-2.71828, Lept::get_number(v));
+}
+
+TEST(leptjsonTest, numberWithExponent) {
+  Lept::Value v;
+  EXPECT_EQ(Lept::Parse_error::ok, Lept::parse(v, "1.23e4"));
+  EXPECT_EQ(Lept::Type::Number, Lept::get_type(v));
+  EXPECT_EQ(1.23e4, Lept::get_number(v));
+}
+
+TEST(leptjsonTest, numberWithLeadingZeros) {
+  Lept::Value v;
+  EXPECT_EQ(Lept::Parse_error::ok, Lept::parse(v, "0000123"));
+  EXPECT_EQ(Lept::Type::Number, Lept::get_type(v));
+  EXPECT_EQ(123.0, Lept::get_number(v));
+}
+
+TEST(leptjsonTest, invalidNumberFormat) {
+  Lept::Value v;
+  EXPECT_EQ(Lept::Parse_error::invalid_value, Lept::parse(v, "123abc"));
+  EXPECT_EQ(Lept::Parse_error::invalid_value, Lept::parse(v, "-123-"));
+  EXPECT_EQ(Lept::Parse_error::invalid_value, Lept::parse(v, "1.2.3"));
+  EXPECT_EQ(Lept::Parse_error::invalid_value, Lept::parse(v, "1E2.5"));
+  EXPECT_EQ(Lept::Parse_error::invalid_value, Lept::parse(v, "-"));
+}
+
+TEST(leptjsonTest, numberOutOfRange) {
+  Lept::Value v;
+  EXPECT_EQ(Lept::Parse_error::number_too_big, Lept::parse(v, "1e309"));
+  EXPECT_EQ(Lept::Parse_error::number_too_big, Lept::parse(v, "-1e309"));
 }
 
 int main(int argc, char *argv[]) {
