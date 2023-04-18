@@ -1,10 +1,9 @@
 #include "leptjson.hpp"
 #include <algorithm>
 #include <cassert>
+#include <charconv>
 #include <limits>
 #include <locale>
-
-namespace mp = boost::multiprecision;
 
 namespace Lept_impl {
 using Lept::Parse_error;
@@ -17,14 +16,15 @@ struct lept_context {
 
 Parse_error parse(Value &v, const std::string &json);
 void parse_whitespace(lept_context &c);
-Parse_error parse_null(lept_context &c, Value &v);
-Parse_error parse_value(lept_context &c, Value &v);
-Parse_error parse_true(lept_context &c, Value &v);
-Parse_error parse_false(lept_context &c, Value &v);
-Parse_error parse_number(lept_context &c, Value &v);
+Parse_error parse_null(const lept_context &c, Value &v);
+Parse_error parse_value(const lept_context &c, Value &v);
+Parse_error parse_true(const lept_context &c, Value &v);
+Parse_error parse_false(const lept_context &c, Value &v);
+Parse_error parse_number(const lept_context &c, Value &v);
+Parse_error parse_string(const lept_context &c, Value &v);
 
-Lept::Parse_error parse_literal(lept_context &c, Value &v,
-                                const std::string_view &literal, Type type);
+Parse_error parse_literal(const lept_context &c, Value &v,
+                          const std::string_view &literal, Type type);
 }; // namespace Lept_impl
 
 /*
@@ -50,22 +50,35 @@ Lept::Parse_error parse_literal(lept_context &c, Value &v,
 *error
 ** message of another Parse_error type.
 */
-Lept::Parse_error Lept_impl::parse(Value &v, const std::string &json) {
-  lept_context c;
-  c.json = json;
-  v.type = Type::Null;
-  parse_whitespace(c);
-  return parse_value(c, v);
+
+Lept::Parse_error Lept_impl::parse(Value &val, const std::string &json) {
+  // it is suitable to use =std::move= in the given code snippet since =json= is
+  // no longer needed after it is moved into =c=. It can help reduce unnecessary
+  // copying and improve performance.
+  lept_context context{std::move(json)};
+  // c.json = json;
+  val.type = Type::Null;
+  parse_whitespace(context);
+  return parse_value(context, val);
 }
 
 // This function removes leading whitespace characters such as tabs, spaces,
 // carriage returns, and newlines from the string 'json'.
-// Parameter 'c' is a lept_context object that contains the JSON string to be
-// parsed.
-// Precondition: The lept_context object 'c' is initialized and its member
-// variable 'json' contains the JSON string to be parsed.
+// Parameter 'c' is a const lept_context object that contains the JSON string to
+// be parsed. Precondition: The const lept_context object 'c' is initialized and
+// its member variable 'json' contains the JSON string to be parsed.
 // Postcondition: Leading whitespace characters in the string 'json' are
 // removed and the value of 'json' is updated to the trimmed string.
+// why use static_cast<unsigned char>, and how to avoid
+
+// Using =static_cast<unsigned char>= is used to ensure that the input character
+// is cast to an unsigned value in the range [0, 255]. This is important because
+// the =std::isspace= function requires a valid value in this range as input,
+// otherwise the behavior is undefined.
+
+// To avoid using =static_cast<unsigned char>=, one can instead use a character
+// type that is already unsigned, such as =unsigned char=, =uint8_t=, or
+// =std::byte=.
 void Lept_impl::parse_whitespace(lept_context &c) {
   auto first_non_whitespace =
       std::find_if_not(c.json.begin(), c.json.end(), [](char ch) {
@@ -76,8 +89,8 @@ void Lept_impl::parse_whitespace(lept_context &c) {
 
 // This function Lept_impl::parse_literal is used to parse the three literal
 // values "null", "true", and "false" in JSON, and store the parsing result in a
-// Value variable v. Parameter c is a lept_context variable containing the JSON
-// string to be parsed. Parameter v is a Value variable used to store the
+// Value variable v. Parameter c is a const lept_context variable containing the
+// JSON string to be parsed. Parameter v is a Value variable used to store the
 // parsing result. Parameter literal is a std::string_view variable containing
 // the literal value to be parsed. Parameter type is a Type variable indicating
 // the expected parsing result type, which can be Type::Null, Type::True, or
@@ -89,11 +102,14 @@ void Lept_impl::parse_whitespace(lept_context &c) {
 // function is that c.json contains a string starting with the specified literal
 // value. After the function is executed, the type of v will be set to the
 // expected type.
-Lept::Parse_error Lept_impl::parse_literal(lept_context &c, Value &v,
-                                           const std::string_view &literal,
-                                           Type type) {
+Lept::Parse_error Lept_impl::parse_literal(
+    const lept_context &c, Value &v,
+    const std::string_view &literal, /*literal for right type*/
+    Type type) {
+
   assert(!c.json.empty());
   assert(!literal.empty());
+
   if (c.json.size() < literal.size() ||
       c.json.substr(0, literal.size()) != literal) {
     return Lept::Parse_error::invalid_value;
@@ -104,87 +120,162 @@ Lept::Parse_error Lept_impl::parse_literal(lept_context &c, Value &v,
   return Lept::Parse_error::success;
 }
 
-Lept::Parse_error Lept_impl::parse_null(lept_context &c, Value &v) {
+inline Lept::Parse_error Lept_impl::parse_null(const lept_context &c,
+                                               Value &v) {
   return parse_literal(c, v, "null", Type::Null);
 }
 
-Lept::Parse_error Lept_impl::parse_true(lept_context &c, Value &v) {
+inline Lept::Parse_error Lept_impl::parse_true(const lept_context &c,
+                                               Value &v) {
   return parse_literal(c, v, "true", Type::True);
 }
 
-Lept::Parse_error Lept_impl::parse_false(lept_context &c, Value &v) {
+inline Lept::Parse_error Lept_impl::parse_false(const lept_context &c,
+                                                Value &v) {
   return parse_literal(c, v, "false", Type::False);
 }
 
+namespace {
+
+static void parse_int(const std::string &s, size_t &i) {
+  while (isdigit(s[i]))
+    ++i;
+}
+
+static void parse_frac(const std::string &s, size_t &i) {
+  if (s[i] == '.') {
+    ++i;
+    if (!isdigit(s[i]))
+      throw Lept::Parse_error::invalid_value;
+    while (isdigit(s[i]))
+      ++i;
+  }
+}
+
+static void parse_exp(const std::string &s, size_t &i) {
+  if (i < s.length() && (s[i] == 'e' || s[i] == 'E')) {
+    ++i;
+    if (s[i] == '+' || s[i] == '-')
+      ++i;
+    if (!isdigit(s[i]))
+      throw Lept::Parse_error::invalid_value;
+    while (isdigit(s[i]))
+      ++i;
+  }
+}
+} // namespace
+
 // TODO: Support large number
-// This function Lept_impl::parse_number is used to parse numbers in JSON,
-// and store the parsing result in a Value variable v.
-// Parameter c is a lept_context variable containing the JSON string to be
-// parsed. If the parsing succeeds, the function sets v.type to Type::Number and
-// v.n to the parsed number, and returns Lept::Parse_error::success.
-// If the parsing fails, the function returns the corresponding error code.
-// This function checks for negative sign, integer part, decimal part, and
-// exponent part in the number. It also catches std::out_of_range exception when
-// parsing very large numbers.
-// NOTE: This implementation currently does not
-// support parsing very large numbers. And may use from_chars instead
-Lept::Parse_error Lept_impl::parse_number(lept_context &c, Value &v) try {
+// TODO: refactor code until loc <= 10
+// This function is a member function of the Lept_impl class. It takes a
+// reference to a lept_context object and a reference to a Value object. It
+// tries to parse a JSON number from the json string in the lept_context object
+// and store the result in the Value object. It returns a Lept::Parse_error
+// value indicating whether the parsing was successful and, if not, what went
+// wrong.
+
+// Parameters
+// const lept_context &c: a reference to a lept_context object
+// Value &v: a reference to a Value object
+// Return value
+// Lept::Parse_error: an enumeration value indicating the result of the parsing
+// operation. Possible values are: Lept::Parse_error::success: the parsing was
+// successful. Lept::Parse_error::invalid_value: the JSON number was invalid.
+// Lept::Parse_error::number_too_big: the JSON number was too big to fit in a
+// double.
+Lept::Parse_error Lept_impl::parse_number(const lept_context &c, Value &v) {
   const std::string &s = c.json;
-  const size_t len = s.length();
-
-  // Check for negative sign
   size_t i = 0;
-  if (s[i] == '-') {
-    if (++i == len || !isdigit(s[i]))
-      return Parse_error::invalid_value;
-  }
 
-  // Check for integer part
-  if (i < len && !isdigit(s[i]))
+  if (s[i] == '-')
+    ++i;
+  if (!isdigit(s[i]))
     return Parse_error::invalid_value;
-  while (i < len && isdigit(s[i]))
-    ++i;
 
-  // Check for decimal part
-  if (i < len && s[i] == '.') {
-    ++i;
-    if (i == len || !isdigit(s[i]))
-      return Parse_error::invalid_value;
-    while (i < len && isdigit(s[i]))
-      ++i;
-  }
+  parse_int(s, i);
+  parse_frac(s, i);
+  parse_exp(s, i);
 
-  // Check for exponent part
-  if (i < len && (s[i] == 'e' || s[i] == 'E')) {
-    ++i;
-    if (i < len && (s[i] == '+' || s[i] == '-'))
-      ++i;
-    if (i == len || !isdigit(s[i]))
-      return Parse_error::invalid_value;
-    while (i < len && isdigit(s[i]))
-      ++i;
-  }
+  if (i != s.length())
+    return Parse_error::invalid_value;
 
-  if (i != len)
+  auto [_, ec]{std::from_chars(s.data(), s.data() + s.length(),
+                               std::get<double>(v.data))};
+
+  if (ec == std::errc::result_out_of_range)
+    return Parse_error::number_too_big;
+  else if (ec == std::errc::invalid_argument)
     return Parse_error::invalid_value;
 
   v.type = Type::Number;
-  v.data = std::stod(s);
 
   return Parse_error::success;
-} catch (std::out_of_range &) {
-  return Parse_error::number_too_big;
-} catch (...) {
-  return Parse_error::invalid_value;
 }
 
-// 这是解析 JSON 值的函数，输入参数是一个 lept_context 对象和一个 Value
-// 对象 该函数根据 JSON 字符串的第一个字符来决定要解析的 JSON
-// 值类型，分别调用相应的解析函数 如果第一个字符不是
-// 'n'、't'、'f'(只需要解析第一个字母) 或者字符串为空，则返回无效值错误
+Lept::Parse_error Lept_impl::parse_string(const lept_context &c, Value &v) {
+  assert(c.json[0] == '"');
+  std::string str;
+  size_t pos{1};
+  while (pos < c.json.size()) {
+    char ch{c.json[pos++]};
+    if (ch == '"') {
+      v.data = std::move(str);
+      v.type = Type::String;
+      return Parse_error::success;
+    } else if (ch == '\\') {
+      if (pos == c.json.size()) {
+        return Parse_error::miss_quotation_mark;
+      }
+      // ", \, b, f, n, r,t, u...
+      switch (c.json[pos++]) {
+      case '"':
+        str.push_back('"');
+        break;
+      case '\\':
+        str.push_back('\\');
+        break;
+      case '/':
+        str.push_back('/');
+        break;
+      case 'b':
+        str.push_back('\b');
+        break;
+      case 'f':
+        str.push_back('\f');
+        break;
+      case 'n':
+        str.push_back('\n');
+        break;
+      case 'r':
+        str.push_back('\r');
+        break;
+      case 't':
+        str.push_back('\t');
+        break;
+      case 'u': {
+
+      } break;
+      default:
+        return Parse_error::invalid_string_escape;
+      }
+    } else if (static_cast<unsigned char>(ch) < 0x20)
+      return Parse_error::invalid_string_char;
+    else {
+      str.push_back(ch);
+    }
+  }
+  return Parse_error::miss_quotation_mark;
+}
+
+// 这是解析 JSON 值的函数，输入参数是一个 const lept_context
+// 对象和一个 Value 对象
+// 该函数根据 JSON 字符串的第一个字符来决定要解析的 JSON
+// 值类型，分别调用相应的解析函数
 // 解析成功后，会将 Value 对象的 type 成员设置为相应的类型
-// 函数返回一个枚举类型，表示解析过程中的错误类型
-Lept::Parse_error Lept_impl::parse_value(lept_context &c, Value &v) {
+//
+// 函数返回一个枚举类型(defined in leptjson.hpp)，表示解析过程中的错误类型
+Lept::Parse_error Lept_impl::parse_value(const lept_context &c, Value &v) {
+  // 如果检查整个c.json，root_not_signluar会和invalid_type等错误分不开
   switch (c.json[0]) {
   case 'n':
     return parse_null(c, v);
@@ -192,6 +283,8 @@ Lept::Parse_error Lept_impl::parse_value(lept_context &c, Value &v) {
     return parse_true(c, v);
   case 'f':
     return parse_false(c, v);
+  case '"':
+    return parse_string(c, v);
   case '\0':
     return Parse_error::except_value;
   default:
@@ -205,9 +298,15 @@ Lept::Parse_error Lept::parse(Value &v, const std::string &json) {
   return Lept_impl::parse(v, json);
 }
 
-mp::cpp_dec_float_100 Lept::get_number(const Value &v) {
-  if (v.type == Type::Number) {
-    return std::get<mp::cpp_dec_float_100>(v.data);
-  } else
-    return std::numeric_limits<double>::quiet_NaN();
+double Lept::get_number(const Value &v) {
+  return v.type == Type::Number ? std::get<double>(v.data)
+                                : std::numeric_limits<double>::quiet_NaN();
+}
+
+std::string Lept::get_string(const Value &v) {
+  if (v.type == Type::String) {
+    return std::get<std::string>(v.data);
+  } else {
+    return "";
+  }
 }

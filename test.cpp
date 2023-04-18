@@ -103,6 +103,78 @@ TEST(leptjsonTest, bigNumber) {
   Lept::Value v;
   EXPECT_EQ(Lept::Parse_error::number_too_big, Lept::parse(v, "1e300000009"));
 }
+std::vector<std::string> parseString(const std::string &str, char delimiter) {
+  std::vector<std::string> result;
+  std::stringstream ss(str);
+  std::string token;
+  while (getline(ss, token, delimiter)) {
+    result.push_back(token);
+  }
+  return result;
+}
+TEST(LeptJsonTest, ParseInvalidStringEscapeTest) {
+  Lept::Value val;
+  std::string json_string = "\"\\v\"";
+  Lept::Parse_error result = Lept::parse(val, json_string);
+  ASSERT_EQ(result, Lept::Parse_error::invalid_string_escape);
+
+  json_string = "\"\\'\"";
+  result = Lept::parse(val, json_string);
+  ASSERT_EQ(result, Lept::Parse_error::invalid_string_escape);
+
+  json_string = "\"\\0\"";
+  result = Lept::parse(val, json_string);
+  ASSERT_EQ(result, Lept::Parse_error::invalid_string_escape);
+
+  json_string = "\"\\x12\"";
+  result = Lept::parse(val, json_string);
+  ASSERT_EQ(result, Lept::Parse_error::invalid_string_escape);
+}
+
+TEST(LeptJsonTest, ParseInvalidStringCharTest) {
+  Lept::Value val;
+  std::string json_string = "\"\x01\"";
+  Lept::Parse_error result = Lept::parse(val, json_string);
+  ASSERT_EQ(result, Lept::Parse_error::invalid_string_char);
+
+  json_string = "\"\x1F\"";
+  result = Lept::parse(val, json_string);
+  ASSERT_EQ(result, Lept::Parse_error::invalid_string_char);
+}
+
+TEST(LeptJsonTest, ParseStringTest) {
+  Lept::Value val;
+  std::string json_string = "\"\"";
+  Lept::Parse_error result = Lept::parse(val, json_string);
+  ASSERT_EQ(result, Lept::Parse_error::success);
+  ASSERT_EQ(val.type, Lept::Type::String);
+  EXPECT_EQ(Lept::get_string(val), "");
+
+  json_string = "\"Hello\"";
+  result = Lept::parse(val, json_string);
+  ASSERT_EQ(result, Lept::Parse_error::success);
+  ASSERT_EQ(val.type, Lept::Type::String);
+  EXPECT_EQ(Lept::get_string(val), "Hello");
+
+  json_string = "\"Hello\\nWorld\"";
+  result = Lept::parse(val, json_string);
+  ASSERT_EQ(result, Lept::Parse_error::success);
+  ASSERT_EQ(val.type, Lept::Type::String);
+  EXPECT_EQ(Lept::get_string(val), "Hello\nWorld");
+
+  json_string = "\"\\\" \\\\ \\/ \\b \\f \\n \\r \\t\"";
+  result = Lept::parse(val, json_string);
+  ASSERT_EQ(result, Lept::Parse_error::success);
+  ASSERT_EQ(val.type, Lept::Type::String);
+  EXPECT_EQ(Lept::get_string(val), "\" \\ / \b \f \n \r \t");
+}
+
+TEST(LeptJsonTest, ParseUnterminatedStringTest) {
+  Lept::Value val;
+  std::string json_string = "\"hello world";
+  Lept::Parse_error result = Lept::parse(val, json_string);
+  ASSERT_EQ(result, Lept::Parse_error::miss_quotation_mark);
+}
 
 int main(int argc, char *argv[]) {
   testing::InitGoogleTest(&argc, argv);
