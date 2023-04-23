@@ -4,6 +4,9 @@
 #include <charconv>
 #include <limits>
 #include <locale>
+#include <stdexcept>
+#include <string>
+#include <variant>
 
 namespace Lept_impl {
 using Lept::Parse_error;
@@ -137,12 +140,12 @@ inline Lept::Parse_error Lept_impl::parse_false(const lept_context &c,
 
 namespace {
 
-static void parse_int(const std::string &s, size_t &i) {
+static void parse_int_part_helper(const std::string &s, size_t &i) {
   while (isdigit(s[i]))
     ++i;
 }
 
-static void parse_frac(const std::string &s, size_t &i) {
+static void parse_decimal_part_helper(const std::string &s, size_t &i) {
   if (s[i] == '.') {
     ++i;
     if (!isdigit(s[i]))
@@ -152,10 +155,10 @@ static void parse_frac(const std::string &s, size_t &i) {
   }
 }
 
-static void parse_exp(const std::string &s, size_t &i) {
-  if (i < s.length() && (s[i] == 'e' || s[i] == 'E')) {
+static void parse_exp_part_helper(const std::string &s, size_t &i) {
+  if (i < s.length() && (s[i] == 'e' or s[i] == 'E')) {
     ++i;
-    if (s[i] == '+' || s[i] == '-')
+    if (s[i] == '+' or s[i] == '-')
       ++i;
     if (!isdigit(s[i]))
       throw Lept::Parse_error::invalid_value;
@@ -167,20 +170,17 @@ static void parse_exp(const std::string &s, size_t &i) {
 
 // TODO: Support large number
 // TODO: refactor code until loc <= 10
+
 // This function is a member function of the Lept_impl class. It takes a
 // reference to a lept_context object and a reference to a Value object. It
 // tries to parse a JSON number from the json string in the lept_context object
 // and store the result in the Value object. It returns a Lept::Parse_error
 // value indicating whether the parsing was successful and, if not, what went
-// wrong.
-
-// Parameters
-// const lept_context &c: a reference to a lept_context object
-// Value &v: a reference to a Value object
-// Return value
-// Lept::Parse_error: an enumeration value indicating the result of the parsing
-// operation. Possible values are: Lept::Parse_error::success: the parsing was
-// successful. Lept::Parse_error::invalid_value: the JSON number was invalid.
+// wrong. Parameters const lept_context &c: a reference to a lept_context object
+// Value &v: a reference to a Value object Return value Lept::Parse_error: an
+// enumeration value indicating the result of the parsing operation. Possible
+// values are: Lept::Parse_error::success: the parsing was successful.
+// Lept::Parse_error::invalid_value: the JSON number was invalid.
 // Lept::Parse_error::number_too_big: the JSON number was too big to fit in a
 // double.
 Lept::Parse_error Lept_impl::parse_number(const lept_context &c, Value &v) {
@@ -192,9 +192,10 @@ Lept::Parse_error Lept_impl::parse_number(const lept_context &c, Value &v) {
   if (!isdigit(s[i]))
     return Parse_error::invalid_value;
 
-  parse_int(s, i);
-  parse_frac(s, i);
-  parse_exp(s, i);
+  // a number should looks like -123.2673E7182
+  parse_int_part_helper(s, i);
+  parse_decimal_part_helper(s, i);
+  parse_exp_part_helper(s, i);
 
   if (i != s.length())
     return Parse_error::invalid_value;
@@ -213,7 +214,8 @@ Lept::Parse_error Lept_impl::parse_number(const lept_context &c, Value &v) {
 }
 
 Lept::Parse_error Lept_impl::parse_string(const lept_context &c, Value &v) {
-  assert(c.json[0] == '"');
+  // since c enter here only if c.json[0] == ", there is no need to put assert
+  // assert(c.json[0] == '"');
   std::string str;
   size_t pos{1};
   while (pos < c.json.size()) {
@@ -253,7 +255,7 @@ Lept::Parse_error Lept_impl::parse_string(const lept_context &c, Value &v) {
         str.push_back('\t');
         break;
       case 'u': {
-
+        // TODO: add unicode parser
       } break;
       default:
         return Parse_error::invalid_string_escape;
@@ -267,13 +269,11 @@ Lept::Parse_error Lept_impl::parse_string(const lept_context &c, Value &v) {
   return Parse_error::miss_quotation_mark;
 }
 
-// 这是解析 JSON 值的函数，输入参数是一个 const lept_context
-// 对象和一个 Value 对象
-// 该函数根据 JSON 字符串的第一个字符来决定要解析的 JSON
-// 值类型，分别调用相应的解析函数
-// 解析成功后，会将 Value 对象的 type 成员设置为相应的类型
-//
-// 函数返回一个枚举类型(defined in leptjson.hpp)，表示解析过程中的错误类型
+// 这是解析 JSON 值的函数，输入参数是一个 const lept_context 对象和一个 Value
+// 对象 该函数根据 JSON 字符串的第一个字符来决定要解析的 JSON
+// 值类型，分别调用相应的解析函数 解析成功后，会将 Value 对象的 type
+// 成员设置为相应的类型 函数返回一个枚举类型(defined in
+// leptjson.hpp)，表示解析过程中的错误类型
 Lept::Parse_error Lept_impl::parse_value(const lept_context &c, Value &v) {
   // 如果检查整个c.json，root_not_signluar会和invalid_type等错误分不开
   switch (c.json[0]) {
@@ -292,21 +292,68 @@ Lept::Parse_error Lept_impl::parse_value(const lept_context &c, Value &v) {
   }
 }
 
+namespace {
+std::string type_to_string(Lept::Type t) {
+  switch (t) {
+  case Lept::Type::Null:
+    return "null";
+  case Lept::Type::False:
+    return "false";
+  case Lept::Type::True:
+    return "true";
+  case Lept::Type::Number:
+    return "number";
+  case Lept::Type::String:
+    return "string";
+  case Lept::Type::Array:
+    return "array";
+  case Lept::Type::Object:
+    return "object";
+  default:
+    return "unknown";
+  }
+}
+
+// need add object and array
+// get value helper
+template <typename T> T get_val_helper(const Lept::Value &v) {
+  if constexpr (std::is_same_v<T, double>) {
+    if (v.type != Lept::Type::Number) {
+      throw std::runtime_error(
+          "Value is not a number (type =" + type_to_string(v.type) + ")");
+    }
+    return std::get<T>(v.data);
+  }
+
+  if constexpr (std::is_same_v<T, bool>) {
+    if (v.type != Lept::Type::True and v.type != Lept::Type::False) {
+      throw std::runtime_error(
+          "Value is not a boolean (type =" + type_to_string(v.type) + ")");
+    }
+    return (v.type == Lept::Type::True) ? true : false;
+  }
+
+  if constexpr (std::is_same_v<T, std::string>) {
+    if (v.type != Lept::Type::String) {
+      throw std::runtime_error(
+          "Value is not a string (type =" + type_to_string(v.type) + ")");
+    }
+    return std::get<T>(v.data);
+  }
+
+  throw std::runtime_error("Unsuported type");
+}
+
+} // namespace
+
 Lept::Type Lept::get_type(const Value &v) { return v.type; }
 
 Lept::Parse_error Lept::parse(Value &v, const std::string &json) {
   return Lept_impl::parse(v, json);
 }
 
-double Lept::get_number(const Value &v) {
-  return v.type == Type::Number ? std::get<double>(v.data)
-                                : std::numeric_limits<double>::quiet_NaN();
-}
+double Lept::get_number(const Value &v) { return get_val_helper<double>(v); }
 
 std::string Lept::get_string(const Value &v) {
-  if (v.type == Type::String) {
-    return std::get<std::string>(v.data);
-  } else {
-    return "";
-  }
+  return get_val_helper<std::string>(v);
 }
