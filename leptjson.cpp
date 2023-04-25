@@ -6,6 +6,7 @@
 #include <locale>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <variant>
 
 namespace Lept_impl {
@@ -65,6 +66,16 @@ Lept::Parse_error Lept_impl::parse(Value &val, const std::string &json) {
   return parse_value(context, val);
 }
 
+namespace {
+template <typename __Target, typename __Source>
+__Target narrow_cast(const __Source &s) {
+  __Source res = static_cast<__Target>(s);
+  if (s != static_cast<__Source>(res))
+    throw std::runtime_error("narrow_cast<> failed");
+  return res;
+}
+} // namespace
+
 // This function removes leading whitespace characters such as tabs, spaces,
 // carriage returns, and newlines from the string 'json'.
 // Parameter 'c' is a const lept_context object that contains the JSON string to
@@ -85,7 +96,7 @@ Lept::Parse_error Lept_impl::parse(Value &val, const std::string &json) {
 void Lept_impl::parse_whitespace(lept_context &c) {
   auto first_non_whitespace =
       std::find_if_not(c.json.begin(), c.json.end(), [](char ch) {
-        return std::isspace(static_cast<unsigned char>(ch));
+        return std::isspace(narrow_cast<unsigned char>(ch));
       });
   c.json.erase(c.json.begin(), first_non_whitespace);
 }
@@ -105,6 +116,14 @@ void Lept_impl::parse_whitespace(lept_context &c) {
 // function is that c.json contains a string starting with the specified literal
 // value. After the function is executed, the type of v will be set to the
 // expected type.
+
+namespace {
+std::unordered_map<std::string_view, Lept::Type> literals = {
+    {"null", Lept::Type::Null},
+    {"true", Lept::Type::True},
+    {"false", Lept::Type::False}};
+}
+
 Lept::Parse_error Lept_impl::parse_literal(
     const lept_context &c, Value &v,
     const std::string_view &literal, /*literal for right type*/
@@ -138,14 +157,15 @@ inline Lept::Parse_error Lept_impl::parse_false(const lept_context &c,
   return parse_literal(c, v, "false", Type::False);
 }
 
+// this is helper function to parse json's number
+// these function be involved only once
 namespace {
-
-static void parse_int_part_helper(const std::string &s, size_t &i) {
+void parse_int_part_helper(const std::string &s, size_t &i) {
   while (isdigit(s[i]))
     ++i;
 }
 
-static void parse_decimal_part_helper(const std::string &s, size_t &i) {
+void parse_decimal_part_helper(const std::string &s, size_t &i) {
   if (s[i] == '.') {
     ++i;
     if (!isdigit(s[i]))
@@ -155,7 +175,7 @@ static void parse_decimal_part_helper(const std::string &s, size_t &i) {
   }
 }
 
-static void parse_exp_part_helper(const std::string &s, size_t &i) {
+void parse_exp_part_helper(const std::string &s, size_t &i) {
   if (i < s.length() && (s[i] == 'e' or s[i] == 'E')) {
     ++i;
     if (s[i] == '+' or s[i] == '-')
@@ -260,7 +280,7 @@ Lept::Parse_error Lept_impl::parse_string(const lept_context &c, Value &v) {
       default:
         return Parse_error::invalid_string_escape;
       }
-    } else if (static_cast<unsigned char>(ch) < 0x20)
+    } else if (narrow_cast<unsigned char>(ch) < 0x20)
       return Parse_error::invalid_string_char;
     else {
       str.push_back(ch);

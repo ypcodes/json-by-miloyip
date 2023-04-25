@@ -14,5 +14,25 @@
 
 该 JSON 解析器的实现遵循了 https://github.com/miloyip/json-tutorial/ 中所讲述的思路，并在此基础上进行了修改和优化。
 
+
+* Line of Code
++ There are a total of 6 text files in the directory.
++ Out of those, 4 are unique files. It's possible that some files are duplicated or have the same content.
++ 2 files were ignored by the tool, which means they are not code files or not relevant to the analysis.
++ The tool has analyzed 3 different types of files: C++, C/C++ Header, and CMake.
++ For each type of file, the tool has counted the number of files, blank lines, comment lines, and code lines.
++ The total number of files analyzed is 4 (excluding the ignored files).
++ The total number of blank lines is 83.
++ The total number of comment lines is 97.
++ The total number of code lines is 441.
+
+| Language     | Files | Blank | Comment | Code |
+|--------------+-------+-------+---------+------|
+| C++          |     2 |    68 |      86 |  407 |
+| C/C++ Header |     1 |     7 |       1 |   26 |
+| CMake        |     1 |     8 |      10 |    8 |
+| **SUM:**       |     4 |    83 |      97 |  441 |
+
+
 * 贡献
 欢迎提出问题和改进建议并提交 Issue。
