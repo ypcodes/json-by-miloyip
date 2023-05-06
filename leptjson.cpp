@@ -85,14 +85,14 @@ __Target narrow_cast(const __Source &s) {
 // removed and the value of 'json' is updated to the trimmed string.
 // why use static_cast<unsigned char>, and how to avoid
 
-// Using =static_cast<unsigned char>= is used to ensure that the input character
+// Using static_cast<unsigned char> is used to ensure that the input character
 // is cast to an unsigned value in the range [0, 255]. This is important because
 // the =std::isspace= function requires a valid value in this range as input,
 // otherwise the behavior is undefined.
 
-// To avoid using =static_cast<unsigned char>=, one can instead use a character
-// type that is already unsigned, such as =unsigned char=, =uint8_t=, or
-// =std::byte=.
+// To avoid using static_cast<unsigned char>, one can instead use a character
+// type that is already unsigned, such as unsigned char, =uint8_t=, or
+// std::byte.
 void Lept_impl::parse_whitespace(lept_context &c) {
   auto first_non_whitespace =
       std::find_if_not(c.json.begin(), c.json.end(), [](char ch) {
@@ -190,7 +190,6 @@ void parse_exp_part_helper(const std::string &s, size_t &i) {
 
 // TODO: Support large number
 // TODO: refactor code until loc <= 10
-
 // This function is a member function of the Lept_impl class. It takes a
 // reference to a lept_context object and a reference to a Value object. It
 // tries to parse a JSON number from the json string in the lept_context object
@@ -220,9 +219,8 @@ Lept::Parse_error Lept_impl::parse_number(const lept_context &c, Value &v) {
   if (i != s.length())
     return Parse_error::invalid_value;
 
-  auto [_, ec]{std::from_chars(s.data(), s.data() + s.length(),
-                               std::get<double>(v.data))};
-
+  auto [_, ec] = std::from_chars(s.data(), s.data() + s.length(),
+                                 std::get<double>(v.data));
   if (ec == std::errc::result_out_of_range)
     return Parse_error::number_too_big;
   else if (ec == std::errc::invalid_argument)
